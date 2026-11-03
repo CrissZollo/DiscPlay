@@ -3,13 +3,16 @@ import path from 'node:path'
 import { configDir } from './paths'
 
 /**
- * Loop devices DiscPlay has attached and not yet released. Kept on disk so that loop devices left
- * behind by a crash (or a kill) can be released the next time DiscPlay starts.
+ * Loop devices (and CDEmu virtual drives) DiscPlay has attached and not yet released. Kept on disk
+ * so that what a crash (or a kill) left behind can be released the next time DiscPlay starts.
  */
-interface OwnedLoop {
+export interface OwnedLoop {
+  /** /dev/loopN, or the virtual drive /dev/srN for CDEmu */
   loop: string
   file: string
   boot: string
+  /** CDEmu device number, when the image is loaded in CDEmu rather than a loop device */
+  cdemu?: number
 }
 
 const registry = () => path.join(configDir(), 'loops.json')
@@ -38,8 +41,8 @@ function write(list: OwnedLoop[]) {
   } catch {}
 }
 
-export function rememberLoop(loop: string, file: string) {
-  write([...read().filter((l) => l.loop !== loop), { loop, file: path.resolve(file), boot: bootId() }])
+export function rememberLoop(loop: string, file: string, cdemu?: number) {
+  write([...read().filter((l) => l.loop !== loop), { loop, file: path.resolve(file), boot: bootId(), cdemu }])
 }
 
 export function forgetLoop(loop: string) {
@@ -61,11 +64,12 @@ export function loopBackingFile(loop: string) {
 /**
  * Loop devices from an earlier run that still hold the same image. Entries from another boot, or
  * whose loop device now holds something else, are dropped (never touch a loop device we don't own).
+ * CDEmu entries are checked against CDEmu's own status when they are released.
  */
 export function leftoverLoops(): OwnedLoop[] {
   const boot = bootId()
   const list = read()
-  const still = list.filter((l) => l.boot === boot && loopBackingFile(l.loop) === l.file)
+  const still = list.filter((l) => l.boot === boot && (l.cdemu !== undefined || loopBackingFile(l.loop) === l.file))
   if (still.length !== list.length) write(still)
   return still
 }

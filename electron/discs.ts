@@ -1,14 +1,12 @@
 import { EventEmitter } from 'node:events'
 import path from 'node:path'
 import type { DiscSessionInfo, DriveState } from '../shared/types'
-import { ejectForSwap, mountDevice, mountImage, unmountImage, volumeLabel, type DriveWatcher } from './drive'
+import { ejectForSwap, mountDevice, type DriveWatcher } from './drive'
+import { mountDiscImage, unmountDiscImage, type ImageMount } from './images'
 import { linkDisc, readDriveLinks, restoreDriveLinks, type DriveLinks } from './prefix'
 
-export interface SavedMount {
+export interface SavedMount extends ImageMount {
   index: number
-  loop: string
-  mountpoint: string
-  label?: string
 }
 
 interface Options {
@@ -17,6 +15,10 @@ interface Options {
   prefix?: string
   letter: string
   log?: (line: string) => void
+  /** Progress while an image is prepared (e.g. converted the first time) */
+  progress?: (message: string) => void
+  /** Things the user should know about an image (music tracks that won't play); default: log */
+  notice?: (message: string) => void
   /** Which inserted discs to link (drive sessions). Default: any data disc. */
   accept?: (d: DriveState) => boolean
 }
@@ -29,7 +31,7 @@ interface Options {
 export class DiscSession extends EventEmitter {
   readonly kind: 'drive' | 'image'
   private images: string[] = []
-  private mounts = new Map<number, { loop: string; mountpoint: string; label?: string }>()
+  private mounts = new Map<number, ImageMount>()
   private current = -1
   private label?: string
   private linked?: string
@@ -88,8 +90,8 @@ export class DiscSession extends EventEmitter {
   /** Take over image mounts an earlier DiscPlay process left for a game that is still running. */
   adopt(mounts: SavedMount[], current: number, original?: DriveLinks) {
     this.original = original
-    for (const m of mounts) {
-      this.mounts.set(m.index, { loop: m.loop, mountpoint: m.mountpoint, label: m.label })
+    for (const { index, ...m } of mounts) {
+      this.mounts.set(index, m)
       if (m.label) this.see(m.label)
     }
     const cur = this.mounts.get(current)
@@ -139,11 +141,18 @@ export class DiscSession extends EventEmitter {
       try {
         let m = this.mounts.get(i)
         if (!m) {
-          const mounted = await mountImage(this.images[i])
-          m = { ...mounted, label: await volumeLabel(mounted.loop) }
+          m = await mountDiscImage(this.images[i], {
+            progress: (msg) => {
+              this.message = msg
+              this.changed()
+              this.opts.progress?.(msg)
+            },
+            notice: this.opts.notice ?? this.opts.log,
+          })
           this.mounts.set(i, m)
         }
-        this.link(m.mountpoint, m.loop)
+        // d:: → the block device; for CDEmu a real CD-ROM drive, so Wine can play the music tracks.
+        this.link(m.mountpoint, m.device)
         this.current = i
         this.see(m.label ?? path.basename(this.images[i]).replace(/\.[^.]+$/, ''))
         this.opts.log?.(`Disc ${i + 1} (${path.basename(this.images[i])}) is in ${this.opts.letter.toUpperCase()}:`)
@@ -227,7 +236,7 @@ export class DiscSession extends EventEmitter {
     this.closed = true
     if (this.onDrive) this.drive?.off('change', this.onDrive)
     await this.queue
-    for (const m of this.mounts.values()) await unmountImage(m.loop).catch(() => {})
+    for (const m of this.mounts.values()) await unmountDiscImage(m).catch(() => {})
     this.mounts.clear()
     // Don't leave the letter pointing at a disc that is gone now.
     if (this.original && this.opts.prefix) restoreDriveLinks(this.opts.prefix, this.opts.letter, this.original)

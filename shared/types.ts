@@ -1,5 +1,8 @@
 // Types shared between the Electron main process and the UI.
 
+/** Disc image types DiscPlay opens (both cases: file dialogs on Linux match case-sensitively) */
+export const IMAGE_EXTENSIONS = ['iso', 'cue', 'bin', 'mds', 'mdf', 'nrg', 'ccd', 'img'].flatMap((e) => [e, e.toUpperCase()])
+
 export type RunnerKind = 'umu' | 'wine' | 'native'
 
 export interface DiscSpec {

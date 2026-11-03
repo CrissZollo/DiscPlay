@@ -4,7 +4,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { DiscSessionInfo, DriveState, ExeCandidate, Game, InstallRequest, InstallResult, RunStatus } from '../shared/types'
 import { DiscSession, type SavedMount } from './discs'
-import { DriveWatcher, inspectDisc, unmountImage } from './drive'
+import { DriveWatcher, inspectDisc } from './drive'
+import { releaseLeftover } from './images'
 import { bootId, leftoverLoops } from './loops'
 import { configDir, logDir } from './paths'
 import { listExes, looksLikeGameExe, prefixReady, realPrefix, restoreDriveLinks, type DriveLinks } from './prefix'
@@ -289,8 +290,21 @@ export class Launcher extends EventEmitter {
     const images = discImages(disc)
     if (disc.source === 'image' && images.length) {
       this.set({ state: 'preparing', gameId: game.id, message: 'Mounting disc image…' })
-      const session = this.openSession(new DiscSession(null, { owner: game.id, prefix, letter }, images))
+      const session = this.openSession(
+        new DiscSession(
+          null,
+          {
+            owner: game.id,
+            prefix,
+            letter,
+            progress: (message) => this.set({ state: 'preparing', gameId: game.id, message }),
+            notice: (text) => this.emit('notice', text),
+          },
+          images,
+        ),
+      )
       await session.useImage(0)
+      this.set({ state: 'preparing', gameId: game.id, message: 'Starting…' })
       return
     }
     if (disc.source !== 'drive') return
@@ -416,8 +430,8 @@ export class Launcher extends EventEmitter {
       if (game?.prefix && game.runner !== 'native' && r.disc?.original) restoreDriveLinks(game.prefix, game.disc.letter || 'd', r.disc.original)
       if (game && r.boot === bootId()) this.addPlaytime(game.id, r.lastSeen - r.startedAt)
     }
-    const keep = new Set(adopted ? (r?.disc?.mounts.map((m) => m.loop) ?? []) : [])
-    for (const l of leftoverLoops()) if (!keep.has(l.loop)) await unmountImage(l.loop).catch(() => {})
+    const keep = new Set(adopted ? (r?.disc?.mounts.map((m) => m.device) ?? []) : [])
+    for (const l of leftoverLoops()) if (!keep.has(l.loop)) await releaseLeftover(l).catch(() => {})
   }
 
   private adopt(r: SavedRun, game: Game) {
@@ -577,7 +591,8 @@ export class Launcher extends EventEmitter {
       // 2. Put disc 1 in and keep the drive letter following disc changes
       let session: DiscSession | undefined
       if (req.from === 'image') {
-        session = this.openSession(new DiscSession(null, { owner: 'install', prefix, letter, log }, images))
+        const progress = (message: string) => this.set({ state: 'preparing', gameId: 'install', message })
+        session = this.openSession(new DiscSession(null, { owner: 'install', prefix, letter, log, progress }, images))
         log(`Mounting ${path.basename(images[0])}${images.length > 1 ? ` (disc 1 of ${images.length})` : ''}`)
         await session.useImage(0)
       } else if (req.from === 'drive') {

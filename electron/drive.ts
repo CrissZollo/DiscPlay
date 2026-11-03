@@ -11,7 +11,7 @@ function decodeUdev(s: string) {
   return s.replace(/\\x([0-9a-f]{2})/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
 }
 
-async function udevProps(device: string) {
+export async function udevProps(device: string) {
   const r = await run('udevadm', ['info', '-q', 'property', '-n', device], { timeout: 4000 })
   const props: Record<string, string> = {}
   if (r.code !== 0) return null
@@ -41,7 +41,7 @@ export async function listDrives(): Promise<OpticalDrive[]> {
   for (const n of names) {
     const device = `/dev/${n}`
     const props = await udevProps(device)
-    if (props?.ID_CDROM !== '1') continue
+    if (props?.ID_CDROM !== '1' || isVirtualDrive(props)) continue
     const links = (props.DEVLINKS ?? '').split(/\s+/)
     const id = links.find((l) => l.startsWith('/dev/disk/by-id/'))
     const name = [props.ID_VENDOR, props.ID_MODEL].filter(Boolean).join(' ').replace(/_/g, ' ').trim() || n
@@ -50,7 +50,12 @@ export async function listDrives(): Promise<OpticalDrive[]> {
   return out
 }
 
-async function mountpointOf(device: string) {
+/** CDEmu's virtual drives (vhba) hold disc images DiscPlay loaded itself; they are not the user's drive. */
+function isVirtualDrive(props: Record<string, string>) {
+  return /\/vhba/.test(props.DEVPATH ?? '') || /cdemu/i.test(props.ID_VENDOR ?? '')
+}
+
+export async function mountpointOf(device: string) {
   const r = await run('findmnt', ['-n', '-o', 'TARGET', '--source', device], { timeout: 4000 })
   const line = r.stdout.split('\n')[0]?.trim()
   return line ? decodeUdev(line) : undefined
@@ -114,50 +119,16 @@ export async function ejectForSwap(device: string) {
     )
 }
 
-const IMAGE_EXT = /\.(iso|img)$/i
-
-/**
- * Find the rest of a multi-disc image set next to one image: "Game (Disc 1).iso" → Disc 2, Disc 3…,
- * also CD1/CD2, Disk_1, DVD 2 and plain trailing numbers ("game1.iso"). Returns disc order, the given file included.
- */
-export function findDiscSet(file: string): string[] {
-  const dir = path.dirname(file)
-  const name = path.basename(file)
-  // [keyword+separator, number]; the keyword may differ between files (CD1 vs Disc 2 is unlikely, but cheap to allow)
-  const patterns = [/(disc|disk|cd|dvd|part)([\s._-]*)(\d{1,2})/i, /()()(\d{1,2})(?=[^\d]*\.[^.]+$)/]
-  let files: string[]
-  try {
-    files = fs.readdirSync(dir).filter((f) => IMAGE_EXT.test(f))
-  } catch {
-    return [file]
-  }
-  const esc = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  for (const re of patterns) {
-    const m = re.exec(name)
-    if (!m) continue
-    const keyword = m[1] ? `(?:disc|disk|cd|dvd|part)${esc(m[2])}` : ''
-    const before = esc(name.slice(0, m.index)) + keyword
-    const after = esc(name.slice(m.index + m[0].length))
-    const same = new RegExp(`^${before}0*(\\d{1,2})${after}$`, 'i')
-    const set = files
-      .map((f) => ({ f, n: Number(same.exec(f)?.[1]) }))
-      .filter((x) => x.n > 0)
-      .sort((a, b) => a.n - b.n)
-      .map((x) => path.join(dir, x.f))
-    if (set.length > 1) return set
-  }
-  return [file]
-}
-
 export async function ejectDevice(device: string) {
   if (await mountpointOf(device)) await run('udisksctl', ['unmount', '-b', device, '--no-user-interaction'], { timeout: 20000 })
   const r = await run('eject', [device], { timeout: 20000 })
   if (r.code !== 0) await run('udisksctl', ['power-off', '-b', device, '--no-user-interaction'], { timeout: 20000 })
 }
 
-/** Loop-mount an ISO/IMG read-only. */
-export async function mountImage(file: string): Promise<{ loop: string; mountpoint: string }> {
-  const setup = await run('udisksctl', ['loop-setup', '-r', '-f', file, '--no-user-interaction'], { timeout: 20000 })
+/** Loop-mount an image read-only. `offset` skips a header (or earlier tracks) before the filesystem. */
+export async function mountImage(file: string, offset = 0): Promise<{ loop: string; mountpoint: string }> {
+  const args = ['loop-setup', '-r', '-f', file, '--no-user-interaction', ...(offset ? ['--offset', String(offset)] : [])]
+  const setup = await run('udisksctl', args, { timeout: 20000 })
   const loop = /as (\/dev\/loop\d+)/.exec(setup.stdout)?.[1]
   if (!loop) throw new Error(`Could not attach the disc image: ${setup.stderr || setup.stdout}`.trim())
   rememberLoop(loop, file)

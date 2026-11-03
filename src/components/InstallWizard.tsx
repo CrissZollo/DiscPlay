@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { AddonInfo, DiscSessionInfo, DriveState, Game, InstallResult, RunnerInfo } from '../../shared/types'
+import { IMAGE_EXTENSIONS } from '../../shared/types'
 import { api, newGame } from '../api'
 import { Disc } from './Disc'
 import { Field, Modal, PathInput } from './Modal'
@@ -62,7 +63,7 @@ export function InstallWizard({ drive, library, addon, targetId: initialTarget, 
   async function addImage() {
     const p = await api.pickFile({
       title: images.length ? `Disc ${images.length + 1} image` : 'Disc image (disc 1)',
-      filters: [{ name: 'Disc images', extensions: ['iso', 'img', 'ISO', 'IMG'] }],
+      filters: [{ name: 'Disc images', extensions: IMAGE_EXTENSIONS }],
       defaultPath: images[0]?.replace(/\/[^/]*$/, ''),
     })
     if (!p) return

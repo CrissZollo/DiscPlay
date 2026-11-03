@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { DriveState, Game, GameArt, RunnerInfo } from '../../shared/types'
+import { IMAGE_EXTENSIONS } from '../../shared/types'
 import { api, artUrl } from '../api'
 import { ArtPicker } from './ArtPicker'
 import { Disc } from './Disc'
@@ -52,7 +53,7 @@ export function GameEditor({ game: initial, isNew, drive, onClose, onSaved, onDe
     const opts = {
       exe: { title: 'Choose the game program', filters: [{ name: 'Programs', extensions: ['exe', 'bat', 'sh', 'AppImage', 'x86_64', '*'] }] },
       prefix: { title: 'Choose the Wine prefix folder', directory: true },
-      image: { title: 'Choose a disc image', filters: [{ name: 'Disc images', extensions: ['iso', 'img', 'ISO', 'IMG'] }] },
+      image: { title: 'Choose a disc image', filters: [{ name: 'Disc images', extensions: IMAGE_EXTENSIONS }] },
       wrapper: { title: 'Choose a wrapper script' },
       cwd: { title: 'Choose the working folder', directory: true },
     }[kind]

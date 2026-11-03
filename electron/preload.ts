@@ -19,6 +19,7 @@ const api: DiscPlayApi = {
   saveSettings: call('settings:save'),
   getRunners: call('runners:get'),
   getDrive: call('drive:get'),
+  listDrives: call('drive:list'),
   ejectDrive: call('drive:eject'),
   launch: call('game:launch'),
   stop: call('game:stop'),

@@ -76,6 +76,7 @@ export interface Settings {
   steamGridDbKey: string
   defaultProton?: string
   prefixBase: string
+  /** "auto" (any optical drive) or a device path; a /dev/disk/by-id path survives replugging */
   driveDevice: string
   /** Show the game automatically when a known disc is inserted */
   autoInsert: boolean
@@ -118,6 +119,16 @@ export interface RemoveOptions {
   addons?: boolean
   /** Also delete the Wine prefix (everything installed in it, saves included) */
   prefix?: boolean
+}
+
+export interface OpticalDrive {
+  /** Kernel device right now, e.g. /dev/sr0 */
+  device: string
+  /** Stable /dev/disk/by-id path, if udev has one */
+  id?: string
+  /** Vendor and model */
+  name: string
+  hasDisc: boolean
 }
 
 export interface ProtonVersion {
@@ -211,6 +222,7 @@ export interface DiscPlayApi {
   saveSettings(s: Settings): Promise<Settings>
   getRunners(): Promise<RunnerInfo>
   getDrive(): Promise<DriveState>
+  listDrives(): Promise<OpticalDrive[]>
   ejectDrive(): Promise<void>
   launch(id: string): Promise<void>
   stop(): Promise<void>

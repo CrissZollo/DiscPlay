@@ -4,7 +4,7 @@ import { pathToFileURL } from 'node:url'
 import fs from 'node:fs'
 import type { DriveState, Game, RemoveOptions, RunStatus, Settings } from '../shared/types'
 import { artPath, gridArt, gridSearch, importArt } from './art'
-import { DriveWatcher, ejectDevice, findDiscSet } from './drive'
+import { DriveWatcher, ejectDevice, findDiscSet, listDrives } from './drive'
 import { heroicImport, heroicPreview } from './heroic'
 import { gameForDisc, Launcher } from './launcher'
 import { logDir } from './paths'
@@ -152,6 +152,7 @@ function registerIpc() {
   })
   ipcMain.handle('runners:get', () => runnerInfo())
   ipcMain.handle('drive:get', () => drive.state)
+  ipcMain.handle('drive:list', () => listDrives())
   ipcMain.handle('drive:eject', async () => {
     await ejectDevice(drive.device)
     drive.soon(800)

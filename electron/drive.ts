@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events'
 import { spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { DriveState } from '../shared/types'
+import type { DriveState, OpticalDrive } from '../shared/types'
 import { forgetLoop, loopBackingFile, rememberLoop } from './loops'
 import { run, sleep } from './util'
 
@@ -20,6 +20,34 @@ async function udevProps(device: string) {
     if (i > 0) props[line.slice(0, i)] = line.slice(i + 1)
   }
   return props
+}
+
+/** A device path with symlinks resolved (/dev/disk/by-id/… → /dev/sr1); the path itself when it doesn't exist now. */
+function realDevice(p: string) {
+  try {
+    return fs.realpathSync(p)
+  } catch {
+    return p
+  }
+}
+
+/** Every optical drive the system has right now, with a name and a path that survives replugging. */
+export async function listDrives(): Promise<OpticalDrive[]> {
+  let names: string[] = []
+  try {
+    names = fs.readdirSync('/sys/class/block').filter((n) => /^sr\d+$/.test(n)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+  } catch {}
+  const out: OpticalDrive[] = []
+  for (const n of names) {
+    const device = `/dev/${n}`
+    const props = await udevProps(device)
+    if (props?.ID_CDROM !== '1') continue
+    const links = (props.DEVLINKS ?? '').split(/\s+/)
+    const id = links.find((l) => l.startsWith('/dev/disk/by-id/'))
+    const name = [props.ID_VENDOR, props.ID_MODEL].filter(Boolean).join(' ').replace(/_/g, ' ').trim() || n
+    out.push({ device, id, name, hasDisc: props.ID_CDROM_MEDIA === '1' })
+  }
+  return out
 }
 
 async function mountpointOf(device: string) {
@@ -202,16 +230,31 @@ function resolveCaseless(root: string, rel: string) {
 /**
  * Watches an optical drive. Uses `udevadm monitor` for instant notice of disc changes,
  * plus a slow poll as a fallback. Reads only udev's database, so it never spins the drive up.
+ *
+ * The setting is "auto" (any optical drive: the one in use while it holds a disc, else one that
+ * has a disc, else the first), or a device path. A /dev/disk/by-id path keeps pointing at the same
+ * drive when a USB drive comes back as sr1 after being replugged. `device` is the kernel device in use.
  */
 export class DriveWatcher extends EventEmitter {
   state: DriveState
+  device: string
   private monitor?: ChildProcess
   private timer?: NodeJS.Timeout
   private pending?: NodeJS.Timeout
 
-  constructor(public device: string) {
+  constructor(private setting: string) {
     super()
-    this.state = { device, present: false, hasDisc: false }
+    this.device = setting === 'auto' ? '/dev/sr0' : realDevice(setting)
+    this.state = { device: this.device, present: false, hasDisc: false }
+  }
+
+  private async resolve() {
+    if (this.setting !== 'auto') return realDevice(this.setting)
+    const drives = await listDrives()
+    const cur = drives.find((d) => d.device === this.device)
+    // Never switch away from a drive whose disc is in use.
+    if (cur?.hasDisc) return cur.device
+    return (drives.find((d) => d.hasDisc) ?? cur ?? drives[0])?.device ?? this.device
   }
 
   start() {
@@ -219,17 +262,17 @@ export class DriveWatcher extends EventEmitter {
     this.timer = setInterval(() => this.refresh(), 4000)
     try {
       this.monitor = spawn('udevadm', ['monitor', '--udev', '--subsystem-match=block'], { stdio: ['ignore', 'pipe', 'ignore'] })
-      const name = path.basename(this.device)
+      // Any optical drive: in auto mode a disc may go into another drive, and a replugged drive gets a new name.
       this.monitor.stdout?.on('data', (buf: Buffer) => {
-        if (buf.toString().includes(name)) this.soon()
+        if (/\/block\/sr\d+/.test(buf.toString())) this.soon()
       })
       this.monitor.on('error', () => {})
     } catch {}
   }
 
-  setDevice(device: string) {
-    if (device === this.device) return
-    this.device = device
+  setDevice(setting: string) {
+    if (setting === this.setting) return
+    this.setting = setting
     this.refresh()
   }
 
@@ -244,6 +287,7 @@ export class DriveWatcher extends EventEmitter {
   }
 
   async refresh() {
+    this.device = await this.resolve()
     const next = await readDrive(this.device)
     const prev = this.state
     if (next.hasDisc && prev.hasDisc && next.label === prev.label) {

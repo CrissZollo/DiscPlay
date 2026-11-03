@@ -24,7 +24,7 @@ export const defaultSettings = (): Settings => ({
   sound: true,
   steamGridDbKey: '',
   prefixBase: path.join(home, 'Games/DiscPlay/Prefixes'),
-  driveDevice: '/dev/sr0',
+  driveDevice: 'auto',
   autoInsert: true,
   offerInstall: true,
   startFullscreen: false,
@@ -62,7 +62,11 @@ class Store {
   }
 
   getSettings(): Settings {
-    if (!this.settings) this.settings = { ...defaultSettings(), ...readJson<Partial<Settings>>(settingsFile(), {}) }
+    if (!this.settings) {
+      this.settings = { ...defaultSettings(), ...readJson<Partial<Settings>>(settingsFile(), {}) }
+      // The old default; automatic covers it and also follows a USB drive that comes back as sr1.
+      if (this.settings.driveDevice === '/dev/sr0' || !this.settings.driveDevice) this.settings.driveDevice = 'auto'
+    }
     return this.settings
   }
 

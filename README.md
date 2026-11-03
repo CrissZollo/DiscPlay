@@ -5,7 +5,7 @@ ghost disc floats in the empty drive. Put a real game disc in your drive, or pic
 shelf, and the disc flies into the drive and spins up. The game's artwork fades in behind it and
 you press **Play**.
 
-- **Real discs are first-class.** DiscPlay watches your optical drive (`/dev/sr0` by default) through udev, without spinning the drive up. When a disc goes in, it is matched by volume label to its game, which comes up ready to play. Unknown discs get an *Install game* button.
+- **Real discs are first-class.** DiscPlay watches your optical drive(s) through udev (any drive by default, or one you pick; a USB drive is still found after replugging), without spinning the drive up. When a disc goes in, it is matched by volume label to its game, which comes up ready to play. Unknown discs get an *Install game* button.
 - **Unknown discs** can be added to a game that is already in the library. DiscPlay suggests the likely game (another disc of a set it knows, such as `DSLOA2` next to `DSLOA1`, or a label that matches a title or its initials) with a one-click *Add to …*, or you pick the game yourself. The label is saved with the game, so the disc brings it up and counts as its disc from then on. When a game is waiting for its disc and a different one is in, *Use this disc* does the same and starts the game.
 - **Rolling disc shelf.** Discs stand on a glossy floor and roll as the shelf moves.
 - **Runs games with umu + Proton** (or plain Wine, or native Linux). For disc games it mounts the disc with udisks, points the prefix's `D:` at it (`d:` → mount, `d::` → device) and marks it as a CD-ROM in the registry. If the game needs its disc and it isn't in, a "Please insert the disc" prompt waits and starts the game as soon as the disc appears.

@@ -1,13 +1,20 @@
 import { useEffect, useState } from 'react'
-import type { RunnerInfo, Settings } from '../../shared/types'
+import type { OpticalDrive, RunnerInfo, Settings } from '../../shared/types'
 import { api } from '../api'
 import { Field, Modal, PathInput, Toggle } from './Modal'
 
 export function SettingsModal({ settings, onClose, onSaved, onImportHeroic }: { settings: Settings; onClose(): void; onSaved(s: Settings): void; onImportHeroic(): void }) {
   const [s, setS] = useState(settings)
   const [runners, setRunners] = useState<RunnerInfo>()
+  const [drives, setDrives] = useState<OpticalDrive[]>([])
+  const [customDrive, setCustomDrive] = useState(false)
   useEffect(() => {
     api.getRunners().then(setRunners)
+    api.listDrives().then((list) => {
+      setDrives(list)
+      const known = settings.driveDevice === 'auto' || list.some((d) => (d.id ?? d.device) === settings.driveDevice)
+      setCustomDrive(!known)
+    })
   }, [])
   const set = <K extends keyof Settings>(k: K, v: Settings[K]) => setS((x) => ({ ...x, [k]: v }))
   return (
@@ -31,9 +38,27 @@ export function SettingsModal({ settings, onClose, onSaved, onImportHeroic }: { 
       <Toggle checked={s.startFullscreen} onChange={(v) => set('startFullscreen', v)} label="Start in fullscreen (F11 toggles)" />
 
       <h3>Disc drive</h3>
-      <Field label="Optical drive device">
-        <input value={s.driveDevice} onChange={(e) => set('driveDevice', e.target.value)} spellCheck={false} />
+      <Field label="Optical drive" hint={s.driveDevice === 'auto' ? 'Uses whichever drive a disc goes into.' : undefined}>
+        <select
+          value={customDrive ? 'custom' : s.driveDevice}
+          onChange={(e) => {
+            const v = e.target.value
+            setCustomDrive(v === 'custom')
+            if (v !== 'custom') set('driveDevice', v)
+          }}
+        >
+          <option value="auto">Automatic{drives.length === 1 ? ` (${drives[0].name})` : drives.length ? ` (${drives.length} drives)` : ' (no drive found)'}</option>
+          {drives.map((d) => (
+            <option key={d.device} value={d.id ?? d.device}>{d.name} · {d.device.replace('/dev/', '')}</option>
+          ))}
+          <option value="custom">Other device path…</option>
+        </select>
       </Field>
+      {customDrive && (
+        <Field label="Device path">
+          <input value={s.driveDevice === 'auto' ? '' : s.driveDevice} onChange={(e) => set('driveDevice', e.target.value.trim() || 'auto')} placeholder="/dev/sr0" spellCheck={false} />
+        </Field>
+      )}
       <Toggle checked={s.autoInsert} onChange={(v) => set('autoInsert', v)} label="Show the game when its disc is inserted" />
       <Toggle checked={s.offerInstall} onChange={(v) => set('offerInstall', v)} label="Offer to install or link unknown discs" />
 

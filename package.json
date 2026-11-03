@@ -1,0 +1,74 @@
+{
+  "name": "discplay",
+  "productName": "DiscPlay",
+  "version": "0.1.0",
+  "description": "A launcher for your old PC disc games on Linux",
+  "main": "dist-electron/main.js",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "build:main": "node scripts/build-main.mjs",
+    "build:renderer": "vite build",
+    "build": "npm run build:main && npm run build:renderer",
+    "start": "npm run build && electron .",
+    "dev": "node scripts/dev.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "install-desktop": "node scripts/install-desktop.mjs",
+    "dist": "npm run build && electron-builder --linux AppImage"
+  },
+  "dependencies": {
+    "@fontsource-variable/nunito": "^5.3.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.2.1",
+    "electron": "^45.2.1",
+    "electron-builder": "^26.18.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5"
+  },
+  "allowScripts": {
+    "electron@45.2.1": true,
+    "esbuild@0.28.2": true,
+    "electron-winstaller": false
+  },
+  "author": {
+    "name": "DiscPlay"
+  },
+  "build": {
+    "appId": "io.discplay.DiscPlay",
+    "productName": "DiscPlay",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "dist-electron/**",
+      "build/icon.png",
+      "build/icon.svg",
+      "package.json"
+    ],
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Game",
+      "icon": "build/icon.png",
+      "executableName": "discplay",
+      "synopsis": "Play your old PC disc games",
+      "desktop": {
+        "entry": {
+          "StartupWMClass": "DiscPlay",
+          "Keywords": "games;cd;dvd;wine;proton;"
+        }
+      },
+      "syncDesktopName": true
+    }
+  },
+  "desktopName": "discplay.desktop"
+}

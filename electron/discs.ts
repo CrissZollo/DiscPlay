@@ -4,6 +4,13 @@ import type { DiscSessionInfo, DriveState } from '../shared/types'
 import { ejectForSwap, mountDevice, mountImage, unmountImage, volumeLabel, type DriveWatcher } from './drive'
 import { linkDisc } from './prefix'
 
+export interface SavedMount {
+  index: number
+  loop: string
+  mountpoint: string
+  label?: string
+}
+
 interface Options {
   owner: string
   /** Wine prefix whose drive letter follows the disc; none for native games */
@@ -64,6 +71,29 @@ export class DiscSession extends EventEmitter {
       labels: this.seenLabels(),
       busy: this.busy || undefined,
       message: this.message,
+    }
+  }
+
+  /** Image mounts this session holds, for picking them up again after DiscPlay restarts. */
+  mountList(): SavedMount[] {
+    return [...this.mounts].map(([index, m]) => ({ index, ...m }))
+  }
+
+  get currentImage() {
+    return this.current
+  }
+
+  /** Take over image mounts an earlier DiscPlay process left for a game that is still running. */
+  adopt(mounts: SavedMount[], current: number) {
+    for (const m of mounts) {
+      this.mounts.set(m.index, { loop: m.loop, mountpoint: m.mountpoint, label: m.label })
+      if (m.label) this.see(m.label)
+    }
+    const cur = this.mounts.get(current)
+    if (cur) {
+      this.current = current
+      this.linked = cur.mountpoint
+      this.label = cur.label
     }
   }
 

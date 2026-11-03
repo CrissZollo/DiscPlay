@@ -42,6 +42,7 @@ export function InstallWizard({ drive, library, addon, targetId: initialTarget, 
   const [use, setUse] = useState<AddonUse>('separate')
   const [session, setSession] = useState<DiscSessionInfo | null>(null)
   const [swapError, setSwapError] = useState<string>()
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
   const logRef = useRef<HTMLPreElement>(null)
 
   const target = mode === 'addon' ? targets.find((g) => g.id === targetId) : undefined
@@ -174,6 +175,20 @@ export function InstallWizard({ drive, library, addon, targetId: initialTarget, 
     }
   }
 
+  /** Closing after a new-game install without adding it: offer to delete the prefix it made. */
+  const closePick = () => (result?.createdPrefix ? setConfirmDiscard(true) : onClose())
+  async function discard() {
+    if (!result?.createdPrefix) return onClose()
+    try {
+      await api.discardInstall(result.createdPrefix)
+      onClose()
+    } catch (e) {
+      setConfirmDiscard(false)
+      setError(errText(e))
+    }
+  }
+  const stopInstall = () => api.stop()
+
   const canStart =
     (from === 'image' ? images.length > 0 : from === 'file' ? !!setupFile : drive.hasDisc) && (mode === 'game' || !!target)
   const settling = step === 'running' && lines.some((l) => l.startsWith('Installer closed, waiting'))
@@ -183,7 +198,7 @@ export function InstallWizard({ drive, library, addon, targetId: initialTarget, 
   return (
     <Modal
       title={mode === 'addon' ? (target ? `Install add-on · ${target.title}` : 'Install add-on disc') : 'Install from disc'}
-      onClose={step === 'running' ? () => {} : onClose}
+      onClose={step === 'running' ? () => {} : step === 'pick' ? closePick : onClose}
       footer={
         step === 'setup' ? (
           <>
@@ -191,11 +206,19 @@ export function InstallWizard({ drive, library, addon, targetId: initialTarget, 
             <button className="btn" onClick={onClose}>Cancel</button>
             <button className="btn btn--primary" onClick={start} disabled={!canStart}>Start installer</button>
           </>
+        ) : step === 'pick' && confirmDiscard ? (
+          <>
+            <span className="muted">Close without adding {title}? Its new Windows environment and everything installed into it will be deleted.</span>
+            <span className="spacer" />
+            <button className="btn" onClick={() => setConfirmDiscard(false)}>Back</button>
+            <button className="btn" onClick={onClose}>Keep the files</button>
+            <button className="btn btn--danger" onClick={discard}>Delete and close</button>
+          </>
         ) : step === 'pick' ? (
           <>
             {error && <span className="stage-error foot-error">{error}</span>}
             <span className="spacer" />
-            <button className="btn" onClick={onClose}>Close</button>
+            <button className="btn" onClick={closePick}>Close</button>
             <button className="btn btn--primary" onClick={finish} disabled={!!target && use !== 'keep' && !chosen}>
               {!target ? 'Add to library' : use === 'separate' ? 'Add to shelf' : 'Done'}
             </button>
@@ -204,12 +227,17 @@ export function InstallWizard({ drive, library, addon, targetId: initialTarget, 
           <>
             <span className="muted">Waiting for the installer to finish in the background…</span>
             <span className="spacer" />
+            <button className="btn btn--small" onClick={stopInstall} title="Stop the installer and everything it started">Stop installer</button>
             <button className="btn btn--small" onClick={() => api.cancelWait()} title="Use this if the installer is closed but DiscPlay keeps waiting">
               The installer is done
             </button>
           </>
         ) : (
-          <span className="muted">Follow the installer window. Keep the default install folder if you can.</span>
+          <>
+            <span className="muted">Follow the installer window. Keep the default install folder if you can.</span>
+            <span className="spacer" />
+            <button className="btn btn--small" onClick={stopInstall} title="Stop the installer and everything it started">Stop installer</button>
+          </>
         )
       }
     >

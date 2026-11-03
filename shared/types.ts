@@ -141,6 +141,8 @@ export interface InstallResult {
   labels: string[]
   /** Program of the target game before the add-on was installed */
   targetExecutable?: string
+  /** The new prefix this install made (new games only); can be thrown away with discardInstall */
+  createdPrefix?: string
 }
 
 /** The disc(s) currently linked into a running game's or installer's prefix. */
@@ -201,6 +203,8 @@ export interface DiscPlayApi {
   gridSearch(term: string): Promise<GridResult[]>
   gridArt(gridId: number, kind: keyof GameArt): Promise<ArtResult[]>
   installFromDisc(req: InstallRequest): Promise<InstallResult>
+  /** Delete the prefix a new-game install made, when the game is not added after all */
+  discardInstall(prefix: string): Promise<void>
   /** Other images of the same disc set next to an image (Disc 1 → Disc 2, Disc 3…), disc 1 first */
   findDiscSet(imagePath: string): Promise<string[]>
   getDiscSession(): Promise<DiscSessionInfo | null>
@@ -216,4 +220,6 @@ export interface DiscPlayApi {
   onLibrary(cb: (g: Game[]) => void): () => void
   onInstallLog(cb: (line: string) => void): () => void
   onDiscSession(cb: (s: DiscSessionInfo | null) => void): () => void
+  /** Things worth telling the user that don't stop the game, e.g. a Proton fallback */
+  onNotice(cb: (text: string) => void): () => void
 }

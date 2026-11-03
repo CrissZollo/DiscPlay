@@ -30,6 +30,7 @@ const api: DiscPlayApi = {
   gridSearch: call('art:search'),
   gridArt: call('art:list'),
   installFromDisc: call('install:run') as DiscPlayApi['installFromDisc'],
+  discardInstall: call('install:discard'),
   findDiscSet: call('disc:set'),
   getDiscSession: call('disc:session'),
   swapDisc: call('disc:swap'),
@@ -42,6 +43,7 @@ const api: DiscPlayApi = {
   onLibrary: on('library'),
   onInstallLog: on('install-log'),
   onDiscSession: on('disc-session'),
+  onNotice: on('notice'),
 }
 
 contextBridge.exposeInMainWorld('discplay', api)

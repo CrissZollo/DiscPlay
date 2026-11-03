@@ -2,10 +2,11 @@ import { execFile, spawn } from 'node:child_process'
 import fs from 'node:fs'
 
 export function run(cmd: string, args: string[], opts: { timeout?: number; env?: NodeJS.ProcessEnv } = {}) {
-  return new Promise<{ code: number; stdout: string; stderr: string }>((resolve) => {
+  return new Promise<{ code: number; stdout: string; stderr: string; timedOut: boolean }>((resolve) => {
+    // timeout 0 = wait as long as it takes
     execFile(cmd, args, { timeout: opts.timeout ?? 15000, env: opts.env, maxBuffer: 8 << 20 }, (err, stdout, stderr) => {
       const code = err ? (typeof (err as any).code === 'number' ? (err as any).code : 1) : 0
-      resolve({ code, stdout: String(stdout), stderr: String(stderr) })
+      resolve({ code, stdout: String(stdout), stderr: String(stderr), timedOut: !!(err as any)?.killed })
     })
   })
 }

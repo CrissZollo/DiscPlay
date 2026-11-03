@@ -64,7 +64,8 @@ export function App() {
   const toast = useCallback((text: string, kind?: 'error') => {
     const id = Date.now() + Math.random()
     setToasts((t) => [...t, { id, text, kind }])
-    window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), kind === 'error' ? 7000 : 3800)
+    // Long messages stay up long enough to be read.
+    window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), Math.max(kind === 'error' ? 7000 : 3800, text.length * 60))
   }, [])
 
   const later = (ms: number, fn: () => void) => {
@@ -91,6 +92,7 @@ export function App() {
     const offs = [
       api.onLibrary(setLibrary),
       api.onDiscSession(setDiscSession),
+      api.onNotice((text) => toast(text)),
       api.onStatus((s: RunStatus) => {
         setStatus((prev) => {
           if (s.state === 'error') {
@@ -198,6 +200,13 @@ export function App() {
       if (match) insert(match, 'drive')
     }
   }, [library])
+
+  // A game is running that isn't on the stage (DiscPlay was reopened mid-game): show it, so it can be stopped.
+  useEffect(() => {
+    if (status.state !== 'running' && status.state !== 'waiting-disc') return
+    const g = games.find((x) => x.id === status.gameId)
+    if (g && !stageRef.current.gameId) insert(g, 'drive')
+  }, [status, games])
 
   // ---- unknown discs ------------------------------------------------------------------
   const unknownDisc = !!stage.unknownLabel && !stageGame && drive.hasDisc

@@ -17,7 +17,15 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'dpart', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } },
 ])
 
+// One DiscPlay per profile: a second start just brings the window back (two would fight over the
+// drive and could start two games in one prefix). DISCPLAY_PLAN only prints, so it may run alongside.
+const primary = !!process.env.DISCPLAY_PLAN || app.requestSingleInstanceLock()
+if (!primary) app.exit(0)
+
 let win: BrowserWindow | null = null
+/** The window was closed while a game ran: DiscPlay stays in the background and quits when it ends. */
+let quitWhenIdle = false
+let quitting = false
 const drive = new DriveWatcher(store.getSettings().driveDevice)
 const launcher = new Launcher(drive)
 
@@ -46,6 +54,13 @@ function createWindow() {
   const devUrl = process.env.DISCPLAY_DEV_URL
   if (devUrl) win.loadURL(devUrl)
   else win.loadFile(path.join(__dirname, '../dist/index.html'))
+  win.on('close', (e) => {
+    if (quitting) return
+    const what = launcher.activity()
+    if (!what) return
+    e.preventDefault()
+    askBeforeClosing(what)
+  })
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)
     return { action: 'deny' }
@@ -64,6 +79,42 @@ function createWindow() {
         app.quit()
       }, delay)
     })
+  }
+}
+
+/** Closing while something runs: never leave a game or installer without its disc and bookkeeping. */
+async function askBeforeClosing(what: 'game' | 'install' | 'waiting') {
+  if (!win) return
+  if (what === 'waiting') {
+    await launcher.stop()
+    return win.close()
+  }
+  const status = launcher.status
+  const title = 'gameId' in status ? store.get(status.gameId)?.title : undefined
+  const r = await dialog.showMessageBox(win, {
+    type: 'question',
+    title: 'DiscPlay',
+    message: what === 'install' ? 'An installer is still running.' : `${title ?? 'A game'} is still running.`,
+    detail:
+      what === 'install'
+        ? 'Closing DiscPlay stops the installer and removes what it installed so far.'
+        : 'DiscPlay can keep running in the background and close by itself when the game ends, so its disc is released and the play time is saved.',
+    buttons: what === 'install' ? ['Stop installer and close', 'Cancel'] : ['Keep playing, close later', 'Stop the game', 'Cancel'],
+    defaultId: 0,
+    cancelId: what === 'install' ? 1 : 2,
+  })
+  if (what === 'install') {
+    if (r.response !== 0) return
+    quitWhenIdle = true
+    await launcher.stop()
+    return
+  }
+  if (r.response === 0) {
+    quitWhenIdle = true
+    win.hide()
+  } else if (r.response === 1) {
+    quitWhenIdle = true
+    await launcher.stop()
   }
 }
 
@@ -135,6 +186,7 @@ function registerIpc() {
     const r = await launcher.install(req, (line) => send('install-log', line))
     return r
   })
+  ipcMain.handle('install:discard', (_e, prefix: string) => launcher.discardInstall(prefix))
   ipcMain.handle('disc:set', (_e, file: string) => findDiscSet(file))
   ipcMain.handle('disc:session', () => launcher.discSession())
   ipcMain.handle('disc:swap', (_e, i: number) => launcher.swapDisc(i))
@@ -149,7 +201,16 @@ function registerIpc() {
   })
 }
 
-app.whenReady().then(() => {
+app.on('second-instance', () => {
+  if (!win) return
+  quitWhenIdle = false
+  win.show()
+  if (win.isMinimized()) win.restore()
+  win.focus()
+})
+
+app.whenReady().then(async () => {
+  if (!primary) return
   // Dry run: DISCPLAY_PLAN="<title words>" prints the launch command for a game and quits.
   if (process.env.DISCPLAY_PLAN) {
     const q = process.env.DISCPLAY_PLAN.toLowerCase()
@@ -175,9 +236,22 @@ app.whenReady().then(() => {
     if (d.hasDisc && (!prev.hasDisc || prev.label !== d.label)) notifyDisc(d)
   })
   drive.start()
-  launcher.on('status', (s) => send('status', s))
+  launcher.on('status', (s) => {
+    send('status', s)
+    if (quitWhenIdle && !launcher.activity()) {
+      quitting = true
+      app.quit()
+    }
+  })
   launcher.on('library', () => send('library', store.library()))
   launcher.on('disc', (info) => send('disc-session', info))
+  launcher.on('notice', (text) => send('notice', text))
+  // A game from an earlier DiscPlay that was closed or crashed mid-game: pick it up, or clean up after it.
+  await launcher.recover()
+})
+
+app.on('before-quit', () => {
+  quitting = true
 })
 
 app.on('window-all-closed', () => {

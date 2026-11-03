@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import type { ProtonVersion, RunnerInfo } from '../shared/types'
 import { heroicConfig, home } from './paths'
+import { store } from './store'
 import { isExecutable, which } from './util'
 
 const protonDirs = [
@@ -58,11 +59,29 @@ export function runnerInfo(): RunnerInfo {
   return { umu: findUmu(), wine: which('wine'), protons: findProtons() }
 }
 
+const isProton = (p?: string): p is string => !!p && fs.existsSync(path.join(p, 'proton'))
+
+/**
+ * The Proton build to run with. A game's saved build may have been removed since (old GE-Proton
+ * versions get cleaned out); then the default, or the newest installed, is used and `note` says so.
+ */
+export function resolveProton(wanted?: string): { path?: string; note?: string } {
+  if (isProton(wanted)) return { path: wanted }
+  const def = store.getSettings().defaultProton
+  const fallback = isProton(def) ? def : findProtons()[0]?.path
+  if (!wanted || !fallback) return { path: fallback }
+  return {
+    path: fallback,
+    note: `${path.basename(wanted)} is no longer installed – using ${path.basename(fallback)} instead. Pick a Proton version in the game's editor to make this stick.`,
+  }
+}
+
 /** wineserver belonging to a Proton build (used to wait for / kill a prefix). */
 export function protonWineserver(protonPath?: string) {
-  if (!protonPath) return which('wineserver')
+  const proton = resolveProton(protonPath).path
+  if (!proton) return which('wineserver')
   for (const sub of ['files/bin/wineserver', 'dist/bin/wineserver']) {
-    const p = path.join(protonPath, sub)
+    const p = path.join(proton, sub)
     if (fs.existsSync(p)) return p
   }
   return which('wineserver')

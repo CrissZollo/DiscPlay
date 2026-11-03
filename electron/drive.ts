@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import type { DriveState } from '../shared/types'
+import { forgetLoop, loopBackingFile, rememberLoop } from './loops'
 import { run, sleep } from './util'
 
 /** Decode udev's \x20-style escapes (ID_FS_LABEL_ENC). */
@@ -131,9 +132,11 @@ export async function mountImage(file: string): Promise<{ loop: string; mountpoi
   const setup = await run('udisksctl', ['loop-setup', '-r', '-f', file, '--no-user-interaction'], { timeout: 20000 })
   const loop = /as (\/dev\/loop\d+)/.exec(setup.stdout)?.[1]
   if (!loop) throw new Error(`Could not attach the disc image: ${setup.stderr || setup.stdout}`.trim())
+  rememberLoop(loop, file)
   const mp = await mountDevice(loop, 5)
   if (!mp) {
     await run('udisksctl', ['loop-delete', '-b', loop, '--no-user-interaction'])
+    forgetLoop(loop)
     throw new Error('The disc image could not be mounted (only ISO 9660 / UDF images are supported).')
   }
   return { loop, mountpoint: mp }
@@ -142,6 +145,8 @@ export async function mountImage(file: string): Promise<{ loop: string; mountpoi
 export async function unmountImage(loop: string) {
   await run('udisksctl', ['unmount', '-b', loop, '--no-user-interaction'], { timeout: 20000 })
   await run('udisksctl', ['loop-delete', '-b', loop, '--no-user-interaction'], { timeout: 20000 })
+  // Still attached (something kept the image busy): keep it listed so the next start can retry.
+  if (!loopBackingFile(loop)) forgetLoop(loop)
 }
 
 /** Find a file case-insensitively in a directory (discs are often all upper case). */

@@ -22,6 +22,43 @@ export function linkDisc(prefix: string, letter: string, mountpoint: string, dev
   ensureCdromRegistry(prefix, l)
 }
 
+/** What a drive letter pointed at before DiscPlay linked a disc there (null: nothing). */
+export interface DriveLinks {
+  /** letter: → folder */
+  dir: string | null
+  /** letter:: → block device */
+  device: string | null
+}
+
+function readLink(at: string) {
+  try {
+    return fs.readlinkSync(at)
+  } catch {
+    return null
+  }
+}
+
+export function readDriveLinks(prefix: string, letter: string): DriveLinks {
+  const dos = path.join(realPrefix(prefix), 'dosdevices')
+  const l = letter.toLowerCase().replace(/:$/, '')
+  return { dir: readLink(path.join(dos, `${l}:`)), device: readLink(path.join(dos, `${l}::`)) }
+}
+
+/** Put a drive letter back the way it was before a disc session. */
+export function restoreDriveLinks(prefix: string, letter: string, links: DriveLinks) {
+  const dos = path.join(realPrefix(prefix), 'dosdevices')
+  const l = letter.toLowerCase().replace(/:$/, '')
+  for (const [name, target] of [[`${l}:`, links.dir], [`${l}::`, links.device]] as const) {
+    const at = path.join(dos, name)
+    // Only touch symlinks: a real folder at this name was never ours.
+    if (readLink(at) === null && fs.existsSync(at)) continue
+    try {
+      fs.rmSync(at, { force: true })
+      if (target) fs.symlinkSync(target, at)
+    } catch {}
+  }
+}
+
 function replaceLink(at: string, target: string) {
   try {
     fs.rmSync(at, { force: true })

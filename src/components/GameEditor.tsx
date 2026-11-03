@@ -3,6 +3,7 @@ import type { DriveState, Game, GameArt, RunnerInfo } from '../../shared/types'
 import { api, artUrl } from '../api'
 import { ArtPicker } from './ArtPicker'
 import { Disc } from './Disc'
+import { RemoveGame } from './RemoveGame'
 import { Field, Modal, PathInput, Toggle } from './Modal'
 
 interface Props {
@@ -115,15 +116,7 @@ export function GameEditor({ game: initial, isNew, drive, onClose, onSaved, onDe
       footer={
         <>
           {!isNew && (
-            confirmDelete ? (
-              <span className="row">
-                <span className="muted">Remove from library? (files stay)</span>
-                <button className="btn btn--danger btn--small" onClick={async () => { await api.deleteGame(g.id); onDeleted(g.id) }}>Remove</button>
-                <button className="btn btn--small" onClick={() => setConfirmDelete(false)}>Keep</button>
-              </span>
-            ) : (
-              <button className="btn btn--ghost btn--small" onClick={() => setConfirmDelete(true)}>Remove…</button>
-            )
+            <button className="btn btn--ghost btn--small" onClick={() => setConfirmDelete(true)}>Remove…</button>
           )}
           <span className="spacer" />
           {!isNew && initial.runner !== 'native' && initial.prefix && (
@@ -339,6 +332,7 @@ export function GameEditor({ game: initial, isNew, drive, onClose, onSaved, onDe
           <pre className="log">{log}</pre>
         </Modal>
       )}
+      {confirmDelete && <RemoveGame game={initial} onClose={() => setConfirmDelete(false)} onRemoved={(ids) => ids.forEach(onDeleted)} />}
     </Modal>
   )
 }

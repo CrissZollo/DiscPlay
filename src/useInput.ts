@@ -43,6 +43,9 @@ export function useInput(handler: (a: InputAction) => void) {
     const prev: Record<string, boolean> = {}
     let repeatAt = 0
     const poll = (now: number) => {
+      // Only while DiscPlay has focus: the pad also drives the game, and a press meant for the game
+      // must not move the shelf or open the editor behind it.
+      const focused = document.hasFocus()
       const pads = navigator.getGamepads?.() ?? []
       for (const pad of pads) {
         if (!pad) continue
@@ -59,7 +62,8 @@ export function useInput(handler: (a: InputAction) => void) {
         for (const [k, down] of Object.entries(state)) {
           const key = `${pad.index}:${k}`
           const isDir = k === 'left' || k === 'right'
-          if (down && (!prev[key] || (isDir && now > repeatAt))) {
+          // Buttons held while focus comes back (e.g. the one that quit the game) count once released.
+          if (focused && down && (!prev[key] || (isDir && now > repeatAt))) {
             h.current(k as InputAction)
             if (isDir) repeatAt = now + (prev[key] ? 130 : 380)
           }

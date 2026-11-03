@@ -7,7 +7,7 @@ import { DiscSession, type SavedMount } from './discs'
 import { DriveWatcher, inspectDisc, unmountImage } from './drive'
 import { bootId, leftoverLoops } from './loops'
 import { configDir, logDir } from './paths'
-import { listExes, looksLikeGameExe, prefixReady, realPrefix } from './prefix'
+import { listExes, looksLikeGameExe, prefixReady, realPrefix, restoreDriveLinks, type DriveLinks } from './prefix'
 import { findUmu, protonWineserver, resolveProton, umuCommand } from './runners'
 import { store } from './store'
 import { childEnv, isExecutable, run, sleep, slug, splitCommand, which } from './util'
@@ -69,7 +69,7 @@ interface SavedRun {
   /** Updated every 30 s while the game runs; counts as the end time if DiscPlay died with the game */
   lastSeen: number
   boot: string
-  disc?: { kind: 'drive' | 'image'; mounts: SavedMount[]; current: number }
+  disc?: { kind: 'drive' | 'image'; mounts: SavedMount[]; current: number; original?: DriveLinks }
 }
 
 const runFile = () => path.join(configDir(), 'running.json')
@@ -360,7 +360,7 @@ export class Launcher extends EventEmitter {
       startedAt: a.startedAt,
       lastSeen: Date.now(),
       boot: bootId(),
-      disc: s ? { kind: s.kind, mounts: s.mountList(), current: s.currentImage } : undefined,
+      disc: s ? { kind: s.kind, mounts: s.mountList(), current: s.currentImage, original: s.originalLinks() } : undefined,
     })
   }
 
@@ -413,6 +413,7 @@ export class Launcher extends EventEmitter {
     }
     if (r && !adopted) {
       writeRun(undefined)
+      if (game?.prefix && game.runner !== 'native' && r.disc?.original) restoreDriveLinks(game.prefix, game.disc.letter || 'd', r.disc.original)
       if (game && r.boot === bootId()) this.addPlaytime(game.id, r.lastSeen - r.startedAt)
     }
     const keep = new Set(adopted ? (r?.disc?.mounts.map((m) => m.loop) ?? []) : [])
@@ -424,10 +425,12 @@ export class Launcher extends EventEmitter {
     const prefix = game.runner !== 'native' ? game.prefix : undefined
     if (r.disc?.kind === 'image') {
       const s = this.openSession(new DiscSession(null, { owner: game.id, prefix, letter: game.disc.letter || 'd' }, discImages(game.disc)))
-      s.adopt(r.disc.mounts, r.disc.current)
+      s.adopt(r.disc.mounts, r.disc.current, r.disc.original)
       this.emit('disc', s.info())
     } else if (r.disc?.kind === 'drive') {
-      this.openSession(this.driveSession(game)).follow()
+      const s = this.openSession(this.driveSession(game))
+      s.adopt([], -1, r.disc.original)
+      s.follow()
     }
     const a = this.track(game, r.startedAt, r.pgid)
     this.set({ state: 'running', gameId: game.id, pid: r.pgid, startedAt: r.startedAt })

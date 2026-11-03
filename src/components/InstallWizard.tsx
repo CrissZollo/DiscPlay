@@ -306,7 +306,7 @@ export function InstallWizard({ drive, library, addon, targetId: initialTarget, 
           {mode === 'game' && (
             <Field label="Proton" hint="A new Wine prefix is created for the game.">
               <select value={proton} onChange={(e) => setProton(e.target.value)}>
-                <option value="">Default (newest)</option>
+                <option value="">Default (Settings, or newest GE-Proton)</option>
                 {runners?.protons.map((p) => <option key={p.path} value={p.path}>{p.name}</option>)}
               </select>
             </Field>

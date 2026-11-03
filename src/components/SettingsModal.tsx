@@ -35,12 +35,12 @@ export function SettingsModal({ settings, onClose, onSaved, onImportHeroic }: { 
         <input value={s.driveDevice} onChange={(e) => set('driveDevice', e.target.value)} spellCheck={false} />
       </Field>
       <Toggle checked={s.autoInsert} onChange={(v) => set('autoInsert', v)} label="Show the game when its disc is inserted" />
-      <Toggle checked={s.offerInstall} onChange={(v) => set('offerInstall', v)} label="Offer to install unknown discs" />
+      <Toggle checked={s.offerInstall} onChange={(v) => set('offerInstall', v)} label="Offer to install or link unknown discs" />
 
       <h3>Running games</h3>
       <Field label="Default Proton">
         <select value={s.defaultProton ?? ''} onChange={(e) => set('defaultProton', e.target.value || undefined)}>
-          <option value="">Newest installed</option>
+          <option value="">Automatic (newest GE-Proton first)</option>
           {runners?.protons.map((p) => <option key={p.path} value={p.path}>{p.name}</option>)}
         </select>
       </Field>

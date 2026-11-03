@@ -33,8 +33,32 @@ export function findProtons(): ProtonVersion[] {
       if (![...seen.values()].some((v) => v.path === real)) seen.set(name, { name, path: real })
     }
   }
-  // Newest first: GE-Proton11-9 > GE-Proton10-25 > Proton 9.0
-  return [...seen.values()].sort((a, b) => b.name.localeCompare(a.name, undefined, { numeric: true }))
+  return [...seen.values()].sort(byPreference)
+}
+
+/**
+ * Best first: GE-Proton by version (GE-Proton11-9 > GE-Proton10-25), then numbered Valve builds
+ * (Proton 9.0 > Proton 8.0), then the rolling ones (Experimental, Hotfix) whose names say nothing
+ * about their age. GE builds come first because they carry the media and game fixes old disc games need.
+ */
+function rank(name: string): [number, number[]] {
+  const nums = (s: string) => s.match(/\d+/g)?.map(Number) ?? []
+  const ge = /GE-Proton\s*([\d.-]+)/i.exec(name)
+  if (ge) return [0, nums(ge[1])]
+  const valve = /^Proton[\s-]*(\d[\d.]*)/i.exec(name)
+  if (valve) return [1, nums(valve[1])]
+  return [2, []]
+}
+
+function byPreference(a: ProtonVersion, b: ProtonVersion) {
+  const [ga, va] = rank(a.name)
+  const [gb, vb] = rank(b.name)
+  if (ga !== gb) return ga - gb
+  for (let i = 0; i < Math.max(va.length, vb.length); i++) {
+    const d = (vb[i] ?? 0) - (va[i] ?? 0)
+    if (d) return d
+  }
+  return a.name.localeCompare(b.name)
 }
 
 export function findUmu(): string | undefined {

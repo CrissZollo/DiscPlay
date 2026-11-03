@@ -2,12 +2,13 @@ import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell, Notification
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import fs from 'node:fs'
-import type { DriveState, Game, Settings } from '../shared/types'
+import type { DriveState, Game, RemoveOptions, RunStatus, Settings } from '../shared/types'
 import { artPath, gridArt, gridSearch, importArt } from './art'
 import { DriveWatcher, ejectDevice, findDiscSet } from './drive'
 import { heroicImport, heroicPreview } from './heroic'
 import { gameForDisc, Launcher } from './launcher'
 import { logDir } from './paths'
+import { removalInfo, removeGame } from './remove'
 import { runnerInfo } from './runners'
 import { store } from './store'
 
@@ -133,9 +134,15 @@ function registerIpc() {
     launcher.libraryChanged()
     return saved
   })
-  ipcMain.handle('library:delete', (_e, id: string) => {
-    store.remove(id)
+  ipcMain.handle('library:removalInfo', (_e, id: string) => removalInfo(id))
+  ipcMain.handle('library:delete', (_e, id: string, opts?: RemoveOptions) => {
+    const st = launcher.status
+    const ids = [id, ...(opts?.addons ? removalInfo(id).addonGames.map((g) => g.id) : [])]
+    if (launcher.activity() && 'gameId' in st && ids.includes(st.gameId)) throw new Error('Stop the game before removing it.')
+    if (opts?.prefix && launcher.activity()) throw new Error('Wait until nothing is running before deleting a Windows environment.')
+    const removed = removeGame(id, opts)
     send('library', store.library())
+    return removed
   })
   ipcMain.handle('settings:get', () => store.getSettings())
   ipcMain.handle('settings:save', (_e, s: Settings) => {
@@ -236,8 +243,18 @@ app.whenReady().then(async () => {
     if (d.hasDisc && (!prev.hasDisc || prev.label !== d.label)) notifyDisc(d)
   })
   drive.start()
-  launcher.on('status', (s) => {
+  let wasPlaying = false
+  launcher.on('status', (s: RunStatus) => {
     send('status', s)
+    // A game ended: come back to the front, so a gamepad player isn't left at the desktop.
+    const playing = s.state === 'running'
+    if (wasPlaying && !playing && !quitWhenIdle && win) {
+      if (win.isMinimized()) win.restore()
+      win.show()
+      win.moveTop()
+      win.focus()
+    }
+    wasPlaying = playing
     if (quitWhenIdle && !launcher.activity()) {
       quitting = true
       app.quit()

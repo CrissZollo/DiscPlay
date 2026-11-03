@@ -175,6 +175,8 @@ export function App() {
         if (match) {
           if (st.autoInsert && !runningRef.current) insert(match, 'drive')
           else toast(`${match.title} disc inserted`)
+        } else if (!st.offerInstall) {
+          if (d.media !== 'audio') toast(`Unknown disc “${d.label ?? 'Disc'}” inserted. Use Add to install it or link it to a game.`)
         } else if (!runningRef.current) {
           // A disc going in takes over the screen, like a known one does.
           if (s.gameId || s.unknownLabel) {

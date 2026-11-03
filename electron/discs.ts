@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events'
 import path from 'node:path'
 import type { DiscSessionInfo, DriveState } from '../shared/types'
 import { ejectForSwap, mountDevice, mountImage, unmountImage, volumeLabel, type DriveWatcher } from './drive'
-import { linkDisc } from './prefix'
+import { linkDisc, readDriveLinks, restoreDriveLinks, type DriveLinks } from './prefix'
 
 export interface SavedMount {
   index: number
@@ -39,6 +39,8 @@ export class DiscSession extends EventEmitter {
   private queue: Promise<unknown> = Promise.resolve()
   private onDrive?: (d: DriveState) => void
   private closed = false
+  /** The drive letter as it was before this session linked a disc, restored on close */
+  private original?: DriveLinks
 
   constructor(
     private drive: DriveWatcher | null,
@@ -84,7 +86,8 @@ export class DiscSession extends EventEmitter {
   }
 
   /** Take over image mounts an earlier DiscPlay process left for a game that is still running. */
-  adopt(mounts: SavedMount[], current: number) {
+  adopt(mounts: SavedMount[], current: number, original?: DriveLinks) {
+    this.original = original
     for (const m of mounts) {
       this.mounts.set(m.index, { loop: m.loop, mountpoint: m.mountpoint, label: m.label })
       if (m.label) this.see(m.label)
@@ -115,7 +118,14 @@ export class DiscSession extends EventEmitter {
 
   private link(mountpoint: string, device?: string) {
     this.linked = mountpoint
-    if (this.opts.prefix) linkDisc(this.opts.prefix, this.opts.letter, mountpoint, device)
+    if (!this.opts.prefix) return
+    this.original ??= readDriveLinks(this.opts.prefix, this.opts.letter)
+    linkDisc(this.opts.prefix, this.opts.letter, mountpoint, device)
+  }
+
+  /** What the drive letter pointed at before the session, if it has linked anything yet. */
+  originalLinks() {
+    return this.original
   }
 
   /** Put image `i` of the set in. Earlier images stay mounted until the session closes, in case something still reads them. */
@@ -219,5 +229,7 @@ export class DiscSession extends EventEmitter {
     await this.queue
     for (const m of this.mounts.values()) await unmountImage(m.loop).catch(() => {})
     this.mounts.clear()
+    // Don't leave the letter pointing at a disc that is gone now.
+    if (this.original && this.opts.prefix) restoreDriveLinks(this.opts.prefix, this.opts.letter, this.original)
   }
 }

@@ -1651,3 +1651,14 @@ details.advanced summary {
   margin: 2px 0 0;
   color: var(--accent-ink);
 }
+
+.remove-path {
+  margin: -4px 0 8px 52px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  word-break: break-all;
+}
+.toggle.is-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

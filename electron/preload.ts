@@ -13,6 +13,7 @@ const call = (channel: string) => (...args: unknown[]) => ipcRenderer.invoke(cha
 const api: DiscPlayApi = {
   getLibrary: call('library:get'),
   saveGame: call('library:save'),
+  removalInfo: call('library:removalInfo'),
   deleteGame: call('library:delete'),
   getSettings: call('settings:get'),
   saveSettings: call('settings:save'),

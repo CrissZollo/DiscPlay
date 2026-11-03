@@ -102,6 +102,24 @@ export interface DriveState {
   suggestedTitle?: string
 }
 
+/** What removing a game would touch (see removeGame). */
+export interface RemovalInfo {
+  /** Add-on games that share this game's prefix */
+  addonGames: { id: string; title: string }[]
+  prefix?: string
+  /** Why the prefix can't be deleted, if it can't */
+  prefixNote?: string
+  /** The prefix can only be deleted together with the add-on games that share it */
+  prefixNeedsAddons?: boolean
+}
+
+export interface RemoveOptions {
+  /** Also remove the add-on games */
+  addons?: boolean
+  /** Also delete the Wine prefix (everything installed in it, saves included) */
+  prefix?: boolean
+}
+
 export interface ProtonVersion {
   name: string
   path: string
@@ -186,7 +204,9 @@ export interface ArtResult {
 export interface DiscPlayApi {
   getLibrary(): Promise<Game[]>
   saveGame(game: Game): Promise<Game>
-  deleteGame(id: string): Promise<void>
+  removalInfo(id: string): Promise<RemovalInfo>
+  /** Remove a game (and optionally its add-ons and prefix). Returns the ids removed. */
+  deleteGame(id: string, opts?: RemoveOptions): Promise<string[]>
   getSettings(): Promise<Settings>
   saveSettings(s: Settings): Promise<Settings>
   getRunners(): Promise<RunnerInfo>

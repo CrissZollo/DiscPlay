@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events'
 import path from 'node:path'
 import type { DiscSessionInfo, DriveState } from '../shared/types'
 import { ejectForSwap, mountDevice, type DriveWatcher } from './drive'
+import { setDriveSpeed, speedFor, speedName } from './drivespeed'
 import { mountDiscImage, unmountDiscImage, type ImageMount } from './images'
 import { linkDisc, readDriveLinks, restoreDriveLinks, type DriveLinks } from './prefix'
 
@@ -21,6 +22,8 @@ interface Options {
   notice?: (message: string) => void
   /** Which inserted discs to link (drive sessions). Default: any data disc. */
   accept?: (d: DriveState) => boolean
+  /** Drive read speed for this game (0 = full speed); unset = full speed only when the disc asks for a minimum */
+  speed?: number
 }
 
 /**
@@ -43,6 +46,8 @@ export class DiscSession extends EventEmitter {
   private closed = false
   /** The drive letter as it was before this session linked a disc, restored on close */
   private original?: DriveLinks
+  /** Speed this session set the drive to; anything but full speed is undone on close */
+  private speedSet?: number
 
   constructor(
     private drive: DriveWatcher | null,
@@ -176,6 +181,7 @@ export class DiscSession extends EventEmitter {
       const mp = await mountDevice(this.drive.device)
       if (!mp) return undefined
       if (mp !== this.linked) {
+        await this.applySpeed(mp, d.label)
         this.link(mp, this.drive.device)
         this.see(d.label)
         this.opts.log?.(`Disc “${d.label ?? '?'}” is in ${this.opts.letter.toUpperCase()}: (${mp})`)
@@ -184,6 +190,25 @@ export class DiscSession extends EventEmitter {
       }
       return mp
     })
+  }
+
+  /**
+   * Set the drive's read speed for the disc that just went in: the game's setting, or full speed
+   * when the disc says it needs a minimum (some installers and games time a read and give up on a
+   * slow drive). Set again for every disc, as some drives forget the speed when the disc changes.
+   */
+  private async applySpeed(root: string, label?: string) {
+    if (!this.drive) return
+    const want = speedFor(this.opts.speed, root, label)
+    if (!want) return
+    this.opts.progress?.(`Setting the drive to ${speedName(want.speed)}…`)
+    try {
+      await setDriveSpeed(this.drive.device, want.speed)
+      this.speedSet = want.speed
+      this.opts.log?.(`Drive speed set to ${speedName(want.speed)}: ${want.why}`)
+    } catch (e) {
+      this.opts.log?.(`Could not set the drive speed to ${speedName(want.speed)} (${want.why}): ${(e as Error).message}`)
+    }
   }
 
   /** Keep following the physical drive: every accepted disc that goes in is mounted and linked. */
@@ -240,5 +265,7 @@ export class DiscSession extends EventEmitter {
     this.mounts.clear()
     // Don't leave the letter pointing at a disc that is gone now.
     if (this.original && this.opts.prefix) restoreDriveLinks(this.opts.prefix, this.opts.letter, this.original)
+    // A slowed drive would make the next game's disc check time out: back to full speed.
+    if (this.drive && this.speedSet !== undefined && this.speedSet !== 0) await setDriveSpeed(this.drive.device, 0).catch(() => {})
   }
 }

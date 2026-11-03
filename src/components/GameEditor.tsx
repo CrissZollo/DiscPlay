@@ -262,6 +262,24 @@ export function GameEditor({ game: initial, isNew, drive, onClose, onSaved, onDe
                 </select>
               </Field>
               {g.disc.source === 'drive' && (
+                <Field
+                  label="Drive speed"
+                  hint="Automatic: full speed when the disc says it needs a minimum speed (some installers and games time the drive and give up if it is slow). Otherwise the drive is left as it is."
+                >
+                  <select
+                    value={g.disc.speed === undefined ? 'auto' : String(g.disc.speed)}
+                    onChange={(e) => setDisc({ speed: e.target.value === 'auto' ? undefined : Number(e.target.value) })}
+                    style={{ width: 150 }}
+                  >
+                    <option value="auto">Automatic</option>
+                    <option value="0">Full speed</option>
+                    {[4, 8, 16, 24, 32, 48].map((n) => (
+                      <option key={n} value={n}>{n}×</option>
+                    ))}
+                  </select>
+                </Field>
+              )}
+              {g.disc.source === 'drive' && (
                 <Toggle checked={g.disc.required} onChange={(v) => setDisc({ required: v })} label="The game needs its disc to start" />
               )}
             </div>

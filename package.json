@@ -53,6 +53,12 @@
       "build/icon.svg",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "resources/safedisc",
+        "to": "safedisc"
+      }
+    ],
     "linux": {
       "target": [
         "AppImage"

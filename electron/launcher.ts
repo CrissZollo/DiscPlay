@@ -10,6 +10,7 @@ import { bootId, leftoverLoops } from './loops'
 import { configDir, logDir } from './paths'
 import { listExes, looksLikeGameExe, prefixReady, realPrefix, restoreDriveLinks, type DriveLinks } from './prefix'
 import { findUmu, protonWineserver, resolveProton, umuCommand } from './runners'
+import { describe, detectSafeDisc, installShim, runnerPath, windowsPath, type SafeDisc } from './safedisc'
 import { store } from './store'
 import { childEnv, isExecutable, run, sleep, slug, splitCommand, which } from './util'
 
@@ -211,6 +212,22 @@ export class Launcher extends EventEmitter {
   }
 
   /**
+   * The command that starts the game itself. SafeDisc 2.x–4.x games are started through
+   * safedisc-run.exe so SafeDiscShim stands in for the secdrv driver Wine can't load (see safedisc.ts).
+   */
+  planLaunch(game: Game, sd: SafeDisc | null = detectSafeDisc(game)): Plan {
+    if (!sd || !game.prefix) return this.plan(game, game.executable, game.args)
+    const p = this.plan(
+      { ...game, workingDir: game.workingDir || path.dirname(game.executable) },
+      runnerPath(game.prefix),
+      [windowsPath(game.prefix, game.executable), ...game.args],
+    )
+    // The shim otherwise writes trace logs next to the game's exe.
+    p.env.SAFEDISCSHIM_LOGLEVEL ??= 'none'
+    return p
+  }
+
+  /**
    * Check that everything the game needs is still there before anything is mounted, so a moved
    * program, a deleted prefix or an unplugged drive gives a clear message instead of a cryptic
    * Wine error. Returns notes for problems DiscPlay works around.
@@ -267,7 +284,7 @@ export class Launcher extends EventEmitter {
     })
   }
 
-  private driveSession(game: Game) {
+  private driveSession(game: Game, log?: (line: string) => void) {
     const prefix = game.runner !== 'native' ? game.prefix : undefined
     // Follow disc swaps for the whole session: the game's own discs, or any disc no other game claims
     // (e.g. disc 2 of a set whose label was never recorded).
@@ -276,6 +293,14 @@ export class Launcher extends EventEmitter {
       prefix,
       letter: game.disc.letter || 'd',
       accept: (d) => labelMatches(game, d) || !gameForDisc(d),
+      // The saved game, so a speed changed in the editor while it runs counts for the next disc.
+      get speed() {
+        return (store.get(game.id) ?? game).disc.speed
+      },
+      log,
+      progress: (message) => {
+        if (this.status.state === 'preparing') this.set({ state: 'preparing', gameId: game.id, message })
+      },
     })
   }
 
@@ -283,7 +308,7 @@ export class Launcher extends EventEmitter {
    * Mount the game's disc (physical or image) and point its Wine drive letter at it. The disc stays
    * followed while the game runs, so multi-disc games can ask for another disc.
    */
-  private async prepareDisc(game: Game) {
+  private async prepareDisc(game: Game, required = game.disc.required, log?: (line: string) => void) {
     const { disc } = game
     const prefix = game.runner !== 'native' ? game.prefix : undefined
     const letter = disc.letter || 'd'
@@ -310,17 +335,17 @@ export class Launcher extends EventEmitter {
     if (disc.source !== 'drive') return
     await this.drive.refresh()
     if (!labelMatches(game, this.drive.state)) {
-      if (disc.required) {
+      if (required) {
         const ok = await this.waitForDisc(game)
         if (!ok) throw new Cancelled()
       }
     }
-    const session = this.openSession(this.driveSession(game))
+    const session = this.openSession(this.driveSession(game, log))
     session.follow()
     if (!labelMatches(game, this.drive.state)) return
     this.set({ state: 'preparing', gameId: game.id, message: 'Spinning up the disc…' })
     const mp = await session.useDrive()
-    if (!mp && disc.required) throw new Error('The disc could not be mounted.')
+    if (!mp && required) throw new Error('The disc could not be mounted.')
   }
 
   async launch(game: Game) {
@@ -329,13 +354,27 @@ export class Launcher extends EventEmitter {
     this.set({ state: 'preparing', gameId: game.id, message: 'Getting ready…' })
     try {
       for (const note of this.preflight(game)) this.emit('notice', note)
-      await this.prepareDisc(game)
-      const p = this.plan(game, game.executable, game.args)
+      // Copy protection DiscPlay handles itself. SafeDisc always checks the original disc.
+      const sd = detectSafeDisc(game)
+      const sdLog: string[] = []
+      if (sd) {
+        this.set({ state: 'preparing', gameId: game.id, message: `Setting up ${describe(sd)} support…` })
+        sdLog.push(`${describe(sd)} found in ${path.basename(sd.file)}: starting through SafeDiscShim`, ...installShim(game.prefix!))
+        if (game.disc.source === 'none')
+          this.emit('notice', `${game.title} uses ${describe(sd)} copy protection, which checks for the original disc. Set its disc in the editor if it won't start.`)
+      }
+      // Disc lines (drive speed) go into the launch log; the log file is only opened once the disc is in.
+      const discLog: string[] = []
+      let logOpen = true
+      await this.prepareDisc(game, game.disc.required || (!!sd && game.disc.source === 'drive'), (l) => logOpen && discLog.push(l))
+      const p = this.planLaunch(game, sd)
       const logFile = path.join(logDir(), `${game.id}.log`)
       const out = fs.openSync(logFile, 'w')
       fs.writeSync(out, `DiscPlay launch ${new Date().toISOString()}\n`)
       fs.writeSync(out, `cwd: ${p.cwd}\ncommand: ${JSON.stringify(p.cmd)}\n`)
       for (const k of ['WINEPREFIX', 'PROTONPATH', 'GAMEID']) if (p.env[k]) fs.writeSync(out, `${k}=${p.env[k]}\n`)
+      for (const l of [...sdLog, ...discLog]) fs.writeSync(out, `${l}\n`)
+      logOpen = false
       fs.writeSync(out, '\n')
       const startedAt = Date.now()
       // Detached: the game leads its own process group, which outlives DiscPlay if it is closed.

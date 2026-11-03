@@ -11,6 +11,7 @@ import { gameForDisc, Launcher } from './launcher'
 import { logDir } from './paths'
 import { removalInfo, removeGame } from './remove'
 import { runnerInfo } from './runners'
+import { detectSafeDisc } from './safedisc'
 import { store } from './store'
 
 app.setName('DiscPlay')
@@ -226,8 +227,9 @@ app.whenReady().then(async () => {
     const g = store.library().find((x) => x.title.toLowerCase().includes(q))
     if (!g) console.log('no game matching', q)
     else {
-      const p = launcher.plan(g, g.executable, g.args)
-      console.log(JSON.stringify({ cmd: p.cmd, cwd: p.cwd, WINEPREFIX: p.env.WINEPREFIX, PROTONPATH: p.env.PROTONPATH, GAMEID: p.env.GAMEID, disc: g.disc }, null, 2))
+      const safedisc = detectSafeDisc(g)
+      const p = launcher.planLaunch(g, safedisc)
+      console.log(JSON.stringify({ cmd: p.cmd, cwd: p.cwd, WINEPREFIX: p.env.WINEPREFIX, PROTONPATH: p.env.PROTONPATH, GAMEID: p.env.GAMEID, safedisc, disc: g.disc }, null, 2))
     }
     app.exit(0)
     return

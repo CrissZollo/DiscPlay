@@ -18,6 +18,11 @@ export interface DiscSpec {
   letter: string
   /** true = refuse to start until the right disc is in */
   required: boolean
+  /**
+   * Read speed to set the drive to (source = drive): 0 = full speed, 8 = 8×…
+   * Unset = automatic: full speed when the disc says it needs a minimum speed, else the drive is left alone.
+   */
+  speed?: number
 }
 
 export interface GameArt {
